@@ -24,7 +24,7 @@
 </p>
 
 | The repository is divided into two components: [web app](./apps/web-app) and [contracts](./apps/contracts). The app allows users to create their own Semaphore identity, join a group and then send their feedback anonymously (currently on Sepolia). This boilerplate now supports **gasless transactions** via Gelato Relay! |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 
 ## 🛠 Install
 
@@ -106,16 +106,17 @@ This boilerplate now supports **gasless transactions** using [Gelato Relay](http
 2. Navigate to **Relay** section
 3. Create a new API key (or use existing one)
 4. Configure your API key settings:
-   - Enable the relayer to process transactions
-   - Whitelist your contract addresses (both `FEEDBACK_CONTRACT_ADDRESS` and `SEMAPHORE_CONTRACT_ADDRESS`)
-   - Set rate limits and spending caps as needed
+    - Enable the relayer to process transactions
+    - Whitelist your contract addresses (both `FEEDBACK_CONTRACT_ADDRESS` and `SEMAPHORE_CONTRACT_ADDRESS`)
+    - Set rate limits and spending caps as needed
 5. Fund your 1Balance account with USDC or other supported tokens on your desired network
 
 > **IMPORTANT: Your relayer must be properly configured to process transactions.** In the Gelato dashboard, ensure you:
-> - Enable the API key for the specific chain (e.g., Sepolia)
-> - Whitelist the contract addresses your application will interact with
-> - Configure security settings to prevent unauthorized use
-> 
+>
+> -   Enable the API key for the specific chain (e.g., Sepolia)
+> -   Whitelist the contract addresses your application will interact with
+> -   Configure security settings to prevent unauthorized use
+>
 > Without proper configuration, your relay requests will fail. For detailed setup instructions, see the [Gelato Relay Quick Start Guide](https://docs.gelato.network/web3-services/relay/quick-start) and [Security Considerations](https://docs.gelato.network/web3-services/relay/security-considerations).
 
 #### Step 2: Configure Environment Variables
@@ -139,13 +140,14 @@ NEXT_PUBLIC_INFURA_API_KEY=your_infura_project_id
 ```
 
 **Chain IDs:**
-- Sepolia: `11155111`
-- Arbitrum Sepolia: `421614`
-- Other networks: Check [Chainlist](https://chainlist.org/)
+
+-   Sepolia: `11155111`
+-   Arbitrum Sepolia: `421614`
+-   Other networks: Check [Chainlist](https://chainlist.org/)
 
 #### Step 3: Important Next.js Configuration
 
-When configuring Gelato Relay, **DO NOT** uncomment or add `output: "export"` in `apps/web-app/next.config.mjs` (line 20). 
+When configuring Gelato Relay, **DO NOT** uncomment or add `output: "export"` in `apps/web-app/next.config.mjs` (line 20).
 
 The line should remain **commented out**:
 
@@ -167,15 +169,17 @@ http://localhost:3000/debug
 ```
 
 This page displays:
-- ✅ All environment variables status
-- Active relay method being used (Gelato Relay vs Backend API vs OpenZeppelin)
-- Configuration completeness check
+
+-   ✅ All environment variables status
+-   Active relay method being used (Gelato Relay vs Backend API vs OpenZeppelin)
+-   Configuration completeness check
 
 #### Console Monitoring
 
 The application includes comprehensive console logging for debugging:
 
 **Join Group Flow:**
+
 ```javascript
 === JOIN GROUP DEBUG ===
 OpenZeppelin webhook: undefined
@@ -190,6 +194,7 @@ Gelato response status: 201
 ```
 
 **Send Feedback Flow:**
+
 ```javascript
 === SEND FEEDBACK DEBUG ===
 OpenZeppelin webhook: undefined
@@ -220,32 +225,36 @@ The application automatically selects the relay method in this order:
 
 Gelato Relay has rate limits. The application includes automatic retry logic:
 
-- **Rate limit hit (429)**: Automatically retries after 10 seconds
-- **Console warnings**: Check console for rate limit messages
-- **User feedback**: UI displays "⏳ Rate limit exceeded. Retrying in 10 seconds..."
+-   **Rate limit hit (429)**: Automatically retries after 10 seconds
+-   **Console warnings**: Check console for rate limit messages
+-   **User feedback**: UI displays "⏳ Rate limit exceeded. Retrying in 10 seconds..."
 
 ### Troubleshooting
 
 #### Transaction Fails
-- Check your 1Balance has sufficient funds
-- Verify the chain ID matches your network
-- Ensure the API key has correct permissions
-- **Verify relayer configuration**: Confirm that your API key is enabled and contract addresses are whitelisted in the Gelato dashboard
-- Check that the correct chain is enabled for your API key
+
+-   Check your 1Balance has sufficient funds
+-   Verify the chain ID matches your network
+-   Ensure the API key has correct permissions
+-   **Verify relayer configuration**: Confirm that your API key is enabled and contract addresses are whitelisted in the Gelato dashboard
+-   Check that the correct chain is enabled for your API key
 
 #### Rate Limits
-- Wait for automatic retry (10 seconds)
-- Check your Gelato plan limits in the dashboard
-- Consider upgrading your Gelato plan for higher limits
+
+-   Wait for automatic retry (10 seconds)
+-   Check your Gelato plan limits in the dashboard
+-   Consider upgrading your Gelato plan for higher limits
 
 #### Wrong Network
-- Verify `NEXT_PUBLIC_GELATO_RELAYER_CHAIN_ID` matches your deployment network
-- Check that your contract addresses are correct for the network
+
+-   Verify `NEXT_PUBLIC_GELATO_RELAYER_CHAIN_ID` matches your deployment network
+-   Check that your contract addresses are correct for the network
 
 #### Debug Page Shows Red X's
-- Ensure all three Gelato environment variables are set
-- Restart your development server after changing `.env` files
-- Check for typos in variable names (must be exact)
+
+-   Ensure all three Gelato environment variables are set
+-   Restart your development server after changing `.env` files
+-   Check for typos in variable names (must be exact)
 
 ### Monitoring Transactions
 
@@ -256,18 +265,10 @@ Gelato Relay has rate limits. The application includes automatic retry logic:
 
 ### Cost Management
 
-- Gelato charges in USDC (or other tokens) from your 1Balance
-- Monitor your balance in the Gelato dashboard
-- Set up balance alerts to avoid service interruption
-- Typical transaction costs: $0.01-$0.50 depending on network congestion
-
-## 🎯 Alternative Relay Options
-
-If you prefer not to use Gelato, you can:
-
-1. **Use OpenZeppelin Defender Autotask**: Set `NEXT_PUBLIC_OPENZEPPELIN_AUTOTASK_WEBHOOK`
-2. **Use Backend API**: Remove all relay env vars to use default `/api/join` and `/api/feedback` endpoints
-3. **Direct Wallet Transactions**: Implement your own wallet connection logic
+-   Gelato charges in USDC (or other tokens) from your 1Balance
+-   Monitor your balance in the Gelato dashboard
+-   Set up balance alerts to avoid service interruption
+-   Typical transaction costs: $0.01-$0.50 depending on network congestion
 
 ## 📂 Project Structure
 
@@ -308,11 +309,11 @@ yarn prettier:write
 
 ## 🔗 Useful Links
 
-- [Semaphore Documentation](https://docs.semaphore.pse.dev/)
-- [Gelato Network](https://www.gelato.network/)
-- [Gelato Relay Documentation](https://docs.gelato.network/web3-services/relay)
-- [Semaphore Deployed Contracts](https://docs.semaphore.pse.dev/deployed-contracts)
-- [Example Applications](https://docs.semaphore.pse.dev/examples)
+-   [Semaphore Documentation](https://docs.semaphore.pse.dev/)
+-   [Gelato Network](https://www.gelato.network/)
+-   [Gelato Relay Documentation](https://docs.gelato.network/web3-services/relay)
+-   [Semaphore Deployed Contracts](https://docs.semaphore.pse.dev/deployed-contracts)
+-   [Example Applications](https://docs.semaphore.pse.dev/examples)
 
 ## 📝 License
 

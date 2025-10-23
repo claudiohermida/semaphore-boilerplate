@@ -33,9 +33,18 @@ export default function GroupsPage() {
         setLoading.on()
         setLog(`Joining the Feedback group...`)
 
+        // DEBUG: Check which path will be taken
+        console.log("=== JOIN GROUP DEBUG ===")
+        console.log("OpenZeppelin webhook:", process.env.NEXT_PUBLIC_OPENZEPPELIN_AUTOTASK_WEBHOOK)
+        console.log("Gelato endpoint:", process.env.NEXT_PUBLIC_GELATO_RELAYER_ENDPOINT)
+        console.log("Gelato chainId:", process.env.NEXT_PUBLIC_GELATO_RELAYER_CHAIN_ID)
+        console.log("Gelato API key exists:", !!process.env.NEXT_PUBLIC_GELATO_RELAYER_API_KEY)
+        console.log("========================")
+
         let joinedGroup: boolean = false
 
         if (process.env.NEXT_PUBLIC_OPENZEPPELIN_AUTOTASK_WEBHOOK) {
+            console.log("→ Using OpenZeppelin Autotask")
             const response = await fetch(process.env.NEXT_PUBLIC_OPENZEPPELIN_AUTOTASK_WEBHOOK, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -53,25 +62,59 @@ export default function GroupsPage() {
         } else if (
             process.env.NEXT_PUBLIC_GELATO_RELAYER_ENDPOINT &&
             process.env.NEXT_PUBLIC_GELATO_RELAYER_CHAIN_ID &&
-            process.env.GELATO_RELAYER_API_KEY
+            process.env.NEXT_PUBLIC_GELATO_RELAYER_API_KEY
         ) {
+            console.log("→ Using Gelato Relay")
             const iface = new ethers.Interface(Feedback.abi)
             const request = {
                 chainId: process.env.NEXT_PUBLIC_GELATO_RELAYER_CHAIN_ID,
                 target: process.env.NEXT_PUBLIC_FEEDBACK_CONTRACT_ADDRESS,
                 data: iface.encodeFunctionData("joinGroup", [_identity.commitment.toString()]),
-                sponsorApiKey: process.env.GELATO_RELAYER_API_KEY
+                sponsorApiKey: process.env.NEXT_PUBLIC_GELATO_RELAYER_API_KEY
             }
+            console.log("Sending request to Gelato:", request)
             const response = await fetch(process.env.NEXT_PUBLIC_GELATO_RELAYER_ENDPOINT, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(request)
             })
 
-            if (response.status === 201) {
+            const responseData = await response.json()
+            console.log("Gelato response status:", response.status)
+            console.log("Gelato response data:", responseData)
+
+            if (response.status === 429) {
+                console.error("❌ Rate limit hit! Error:", responseData)
+                setLog("⏳ Rate limit exceeded. Retrying in 10 seconds...")
+
+                // Auto-retry after 10 seconds
+                await new Promise(resolve => setTimeout(resolve, 10000))
+                setLog("Retrying transaction...")
+
+                // Retry the request
+                const retryResponse = await fetch(process.env.NEXT_PUBLIC_GELATO_RELAYER_ENDPOINT, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(request)
+                })
+                const retryData = await retryResponse.json()
+                console.log("Retry response:", retryResponse.status, retryData)
+
+                if (retryResponse.status === 201 || retryResponse.ok) {
+                    console.log("✅ Gelato relay successful on retry!")
+                    joinedGroup = true
+                } else {
+                    setLog(`Retry failed: ${retryData.message || "Please try again later"}`)
+                }
+            } else if (response.status === 201 || response.ok) {
+                console.log("✅ Gelato relay successful!")
                 joinedGroup = true
+            } else {
+                console.error("❌ Gelato relay failed:", response.status, responseData)
+                setLog(`Error: ${responseData.message || "Transaction failed"}`)
             }
         } else {
+            console.log("→ Using Backend API (/api/join)")
             const response = await fetch("api/join", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },

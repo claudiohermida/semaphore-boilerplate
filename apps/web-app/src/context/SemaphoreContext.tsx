@@ -29,14 +29,28 @@ export const SemaphoreContextProvider: React.FC<ProviderProps> = ({ children }) 
     const [_feedback, setFeedback] = useState<string[]>([])
 
     const refreshUsers = useCallback(async (): Promise<void> => {
-        const semaphore = new SemaphoreEthers(ethereumNetwork, {
-            address: process.env.NEXT_PUBLIC_SEMAPHORE_CONTRACT_ADDRESS,
-            projectId: process.env.NEXT_PUBLIC_INFURA_API_KEY
-        })
+        try {
+            console.log("=== FETCHING GROUP MEMBERS ===")
+            console.log("Network:", ethereumNetwork)
+            console.log("Semaphore contract:", process.env.NEXT_PUBLIC_SEMAPHORE_CONTRACT_ADDRESS)
+            console.log("Infura project ID:", process.env.NEXT_PUBLIC_INFURA_API_KEY ? "✅ Set" : "❌ Missing")
+            console.log("Group ID:", process.env.NEXT_PUBLIC_GROUP_ID)
 
-        const members = await semaphore.getGroupMembers(process.env.NEXT_PUBLIC_GROUP_ID as string)
+            const semaphore = new SemaphoreEthers(ethereumNetwork, {
+                address: process.env.NEXT_PUBLIC_SEMAPHORE_CONTRACT_ADDRESS,
+                projectId: process.env.NEXT_PUBLIC_INFURA_API_KEY
+            })
 
-        setUsers(members.map((member) => member.toString()))
+            const members = await semaphore.getGroupMembers(process.env.NEXT_PUBLIC_GROUP_ID as string)
+
+            setUsers(members.map((member) => member.toString()))
+            console.log(`✅ Fetched ${members.length} group members`)
+        } catch (error: any) {
+            console.error("❌ Error fetching group members:", error)
+            if (error?.status === 429 || error?.message?.includes("429")) {
+                console.error("Rate limit hit on Infura/RPC provider")
+            }
+        }
     }, [])
 
     const addUser = useCallback(
@@ -47,14 +61,23 @@ export const SemaphoreContextProvider: React.FC<ProviderProps> = ({ children }) 
     )
 
     const refreshFeedback = useCallback(async (): Promise<void> => {
-        const semaphore = new SemaphoreEthers(ethereumNetwork, {
-            address: process.env.NEXT_PUBLIC_SEMAPHORE_CONTRACT_ADDRESS,
-            projectId: process.env.NEXT_PUBLIC_INFURA_API_KEY
-        })
+        try {
+            console.log("Fetching feedback proofs...")
+            const semaphore = new SemaphoreEthers(ethereumNetwork, {
+                address: process.env.NEXT_PUBLIC_SEMAPHORE_CONTRACT_ADDRESS,
+                projectId: process.env.NEXT_PUBLIC_INFURA_API_KEY
+            })
 
-        const proofs = await semaphore.getGroupValidatedProofs(process.env.NEXT_PUBLIC_GROUP_ID as string)
+            const proofs = await semaphore.getGroupValidatedProofs(process.env.NEXT_PUBLIC_GROUP_ID as string)
 
-        setFeedback(proofs.map(({ message }: any) => decodeBytes32String(toBeHex(message, 32))))
+            setFeedback(proofs.map(({ message }: any) => decodeBytes32String(toBeHex(message, 32))))
+            console.log(`✅ Fetched ${proofs.length} feedback proofs`)
+        } catch (error: any) {
+            console.error("❌ Error fetching feedback:", error)
+            if (error?.status === 429 || error?.message?.includes("429")) {
+                console.error("Rate limit hit on Infura/RPC provider")
+            }
+        }
     }, [])
 
     const addFeedback = useCallback(
@@ -65,8 +88,9 @@ export const SemaphoreContextProvider: React.FC<ProviderProps> = ({ children }) 
     )
 
     useEffect(() => {
+        // Stagger requests to avoid rate limits
         refreshUsers()
-        refreshFeedback()
+        setTimeout(() => refreshFeedback(), 1000) // Wait 1 second between calls
     }, [refreshFeedback, refreshUsers])
 
     return (

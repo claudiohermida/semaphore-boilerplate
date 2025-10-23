@@ -39,21 +39,42 @@ export default function ProofsPage() {
 
             setLog(`Posting your anonymous feedback...`)
 
+            // DEBUG: Check which path will be taken
+            console.log("=== SEND FEEDBACK DEBUG ===")
+            console.log("OpenZeppelin webhook:", process.env.NEXT_PUBLIC_OPENZEPPELIN_AUTOTASK_WEBHOOK)
+            console.log("Gelato endpoint:", process.env.NEXT_PUBLIC_GELATO_RELAYER_ENDPOINT)
+            console.log("Gelato chainId:", process.env.NEXT_PUBLIC_GELATO_RELAYER_CHAIN_ID)
+            console.log("Gelato API key exists:", !!process.env.NEXT_PUBLIC_GELATO_RELAYER_API_KEY)
+            console.log("===========================")
+
             try {
+                console.log("Creating group from users:", _users.length)
                 const group = new Group(_users)
 
                 const message = encodeBytes32String(feedback)
+                console.log("Encoded message:", message)
 
+                console.log("Generating ZK proof...")
                 const { points, merkleTreeDepth, merkleTreeRoot, nullifier } = await generateProof(
                     _identity,
                     group,
                     message,
                     process.env.NEXT_PUBLIC_GROUP_ID as string
                 )
+                console.log("✅ Proof generated successfully!")
+                console.log("Proof details:", {
+                    merkleTreeDepth,
+                    merkleTreeRoot: merkleTreeRoot.toString(),
+                    nullifier: nullifier.toString(),
+                    message: message.toString(),
+                    pointsLength: points.length
+                })
 
                 let feedbackSent: boolean = false
                 const params = [merkleTreeDepth, merkleTreeRoot, nullifier, message, points]
+                console.log("Function parameters:", params)
                 if (process.env.NEXT_PUBLIC_OPENZEPPELIN_AUTOTASK_WEBHOOK) {
+                    console.log("→ Using OpenZeppelin Autotask")
                     const response = await fetch(process.env.NEXT_PUBLIC_OPENZEPPELIN_AUTOTASK_WEBHOOK, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -71,25 +92,49 @@ export default function ProofsPage() {
                 } else if (
                     process.env.NEXT_PUBLIC_GELATO_RELAYER_ENDPOINT &&
                     process.env.NEXT_PUBLIC_GELATO_RELAYER_CHAIN_ID &&
-                    process.env.GELATO_RELAYER_API_KEY
+                    process.env.NEXT_PUBLIC_GELATO_RELAYER_API_KEY
                 ) {
+                    console.log("→ Using Gelato Relay")
                     const iface = new ethers.Interface(Feedback.abi)
+
+                    console.log("Encoding sendFeedback function call...")
+                    const encodedData = iface.encodeFunctionData("sendFeedback", params)
+                    console.log("Encoded data length:", encodedData.length)
+
                     const request = {
                         chainId: process.env.NEXT_PUBLIC_GELATO_RELAYER_CHAIN_ID,
                         target: process.env.NEXT_PUBLIC_FEEDBACK_CONTRACT_ADDRESS,
-                        data: iface.encodeFunctionData("sendFeedback", params),
-                        sponsorApiKey: process.env.GELATO_RELAYER_API_KEY
+                        data: encodedData,
+                        sponsorApiKey: process.env.NEXT_PUBLIC_GELATO_RELAYER_API_KEY
                     }
+                    console.log("Sending request to Gelato:", {
+                        chainId: request.chainId,
+                        target: request.target,
+                        dataLength: request.data.length,
+                        hasApiKey: !!request.sponsorApiKey
+                    })
                     const response = await fetch(process.env.NEXT_PUBLIC_GELATO_RELAYER_ENDPOINT, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify(request)
                     })
 
-                    if (response.status === 201) {
+                    const responseData = await response.json()
+                    console.log("Gelato response status:", response.status)
+                    console.log("Gelato response data:", responseData)
+
+                    if (response.status === 429) {
+                        console.error("❌ Rate limit hit! Error:", responseData)
+                        setLog("Rate limit exceeded. Please wait a moment and try again.")
+                    } else if (response.status === 201 || response.ok) {
+                        console.log("✅ Gelato relay successful!")
                         feedbackSent = true
+                    } else {
+                        console.error("❌ Gelato relay failed:", response.status, responseData)
+                        setLog(`Error: ${responseData.message || "Transaction failed"}`)
                     }
                 } else {
+                    console.log("→ Using Backend API (/api/feedback)")
                     const response = await fetch("api/feedback", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -114,10 +159,15 @@ export default function ProofsPage() {
                 } else {
                     setLog("Some error occurred, please try again!")
                 }
-            } catch (error) {
-                console.error(error)
+            } catch (error: any) {
+                console.error("❌ SendFeedback error:", error)
+                console.error("Error details:", {
+                    message: error?.message,
+                    stack: error?.stack,
+                    name: error?.name
+                })
 
-                setLog("Some error occurred, please try again!")
+                setLog(`Error: ${error?.message || "Some error occurred, please try again!"}`)
             } finally {
                 setLoading.off()
             }

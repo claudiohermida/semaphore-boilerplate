@@ -15,7 +15,7 @@ import useSemaphoreIdentity from "@/hooks/useSemaphoreIdentity"
 export default function ProofsPage() {
     const router = useRouter()
     const { setLog } = useLogContext()
-    const { _users, _feedback, refreshFeedback, addFeedback } = useSemaphoreContext()
+    const { _users, _feedback, refreshFeedback, addFeedback, refreshUsers } = useSemaphoreContext()
     const [_loading, setLoading] = useBoolean()
     const { _identity } = useSemaphoreIdentity()
 
@@ -39,57 +39,131 @@ export default function ProofsPage() {
 
             setLog(`Posting your anonymous feedback...`)
 
+            // DEBUG: Check which path will be taken
+            console.log("=== SEND FEEDBACK DEBUG ===")
+            console.log("OZ Relayer endpoint:", process.env.NEXT_PUBLIC_OZ_RELAYER_ENDPOINT)
+            console.log("OZ Relayer chainId:", process.env.NEXT_PUBLIC_OZ_RELAYER_CHAIN_ID)
+            console.log("Using API proxy: /api/oz-relay")
+            console.log("===========================")
+
             try {
-                const group = new Group(_users)
+                // Try to refresh users list, but use cached if refresh fails (e.g., rate limit)
+                console.log("🔄 Attempting to refresh user list from on-chain...")
+                let usersForProof = _users
+                
+                try {
+                    const freshUsers = await refreshUsers()
+                    if (freshUsers.length > 0) {
+                        usersForProof = freshUsers
+                        console.log("✅ User list refreshed - got", freshUsers.length, "members")
+                    } else {
+                        console.log("⚠️ Refresh returned empty, using cached list with", _users.length, "members")
+                    }
+                } catch (refreshError: any) {
+                    console.log("⚠️ Could not refresh user list (rate limit?), using cached list with", _users.length, "members")
+                    console.log("Refresh error:", refreshError.message)
+                }
+                
+                if (usersForProof.length === 0) {
+                    throw new Error("No users found in group. Please go to Groups page and click Refresh.")
+                }
+                
+                console.log("Creating group from users:", usersForProof.length)
+                const group = new Group(usersForProof)
 
                 const message = encodeBytes32String(feedback)
+                console.log("Encoded message:", message)
 
+                console.log("Generating ZK proof...")
                 const { points, merkleTreeDepth, merkleTreeRoot, nullifier } = await generateProof(
                     _identity,
                     group,
                     message,
                     process.env.NEXT_PUBLIC_GROUP_ID as string
                 )
+                console.log("✅ Proof generated successfully!")
+                console.log("Proof details:", {
+                    merkleTreeDepth,
+                    merkleTreeRoot: merkleTreeRoot.toString(),
+                    nullifier: nullifier.toString(),
+                    message: message.toString(),
+                    pointsLength: points.length
+                })
 
                 let feedbackSent: boolean = false
                 const params = [merkleTreeDepth, merkleTreeRoot, nullifier, message, points]
-                if (process.env.NEXT_PUBLIC_OPENZEPPELIN_AUTOTASK_WEBHOOK) {
-                    const response = await fetch(process.env.NEXT_PUBLIC_OPENZEPPELIN_AUTOTASK_WEBHOOK, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                            abi: Feedback.abi,
-                            address: process.env.NEXT_PUBLIC_FEEDBACK_CONTRACT_ADDRESS,
-                            functionName: "sendFeedback",
-                            functionParameters: params
-                        })
-                    })
-
-                    if (response.status === 200) {
-                        feedbackSent = true
-                    }
-                } else if (
-                    process.env.NEXT_PUBLIC_GELATO_RELAYER_ENDPOINT &&
-                    process.env.NEXT_PUBLIC_GELATO_RELAYER_CHAIN_ID &&
-                    process.env.GELATO_RELAYER_API_KEY
+                console.log("Function parameters:", params)
+                if (
+                    process.env.NEXT_PUBLIC_OZ_RELAYER_ENDPOINT &&
+                    process.env.NEXT_PUBLIC_OZ_RELAYER_CHAIN_ID
                 ) {
+                    console.log("→ Using OpenZeppelin Relayer (via API proxy)")
                     const iface = new ethers.Interface(Feedback.abi)
+
+                    console.log("Encoding sendFeedback function call...")
+                    const encodedData = iface.encodeFunctionData("sendFeedback", params)
+                    console.log("Encoded data length:", encodedData.length)
+
                     const request = {
-                        chainId: process.env.NEXT_PUBLIC_GELATO_RELAYER_CHAIN_ID,
-                        target: process.env.NEXT_PUBLIC_FEEDBACK_CONTRACT_ADDRESS,
-                        data: iface.encodeFunctionData("sendFeedback", params),
-                        sponsorApiKey: process.env.GELATO_RELAYER_API_KEY
+                        to: process.env.NEXT_PUBLIC_FEEDBACK_CONTRACT_ADDRESS,
+                        data: encodedData,
+                        value: "0",
+                        gasLimit: 500000,
+                        speed: "fast"
                     }
-                    const response = await fetch(process.env.NEXT_PUBLIC_GELATO_RELAYER_ENDPOINT, {
+                    console.log("Sending request to OZ Relayer:", {
+                        to: request.to,
+                        dataLength: request.data.length,
+                        value: request.value,
+                        gasLimit: request.gasLimit,
+                        speed: request.speed
+                    })
+                    const response = await fetch("/api/oz-relay", {
                         method: "POST",
-                        headers: { "Content-Type": "application/json" },
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
                         body: JSON.stringify(request)
                     })
 
-                    if (response.status === 201) {
+                    const responseData = await response.json()
+                    console.log("OZ Relayer response status:", response.status)
+                    console.log("OZ Relayer response data:", responseData)
+
+                    if (response.status === 429) {
+                        console.error("❌ Rate limit hit! Error:", responseData)
+                        setLog("⏳ Rate limit exceeded. Retrying in 10 seconds...")
+
+                        // Auto-retry after 10 seconds
+                        await new Promise(resolve => setTimeout(resolve, 10000))
+                        setLog("Retrying transaction...")
+
+                        // Retry the request
+                        const retryResponse = await fetch("/api/oz-relay", {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json"
+                            },
+                            body: JSON.stringify(request)
+                        })
+                        const retryData = await retryResponse.json()
+                        console.log("Retry response:", retryResponse.status, retryData)
+
+                        if (retryResponse.status === 200 || retryResponse.ok) {
+                            console.log("✅ OZ Relayer successful on retry!")
+                            feedbackSent = true
+                        } else {
+                            setLog(`Retry failed: ${retryData.message || "Please try again later"}`)
+                        }
+                    } else if (response.status === 200 || response.ok) {
+                        console.log("✅ OZ Relayer successful!")
                         feedbackSent = true
+                    } else {
+                        console.error("❌ OZ Relayer failed:", response.status, responseData)
+                        setLog(`Error: ${responseData.message || "Transaction failed"}`)
                     }
                 } else {
+                    console.log("→ Using Backend API (/api/feedback)")
                     const response = await fetch("api/feedback", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -114,15 +188,20 @@ export default function ProofsPage() {
                 } else {
                     setLog("Some error occurred, please try again!")
                 }
-            } catch (error) {
-                console.error(error)
+            } catch (error: any) {
+                console.error("❌ SendFeedback error:", error)
+                console.error("Error details:", {
+                    message: error?.message,
+                    stack: error?.stack,
+                    name: error?.name
+                })
 
-                setLog("Some error occurred, please try again!")
+                setLog(`Error: ${error?.message || "Some error occurred, please try again!"}`)
             } finally {
                 setLoading.off()
             }
         }
-    }, [_identity, _users, addFeedback, setLoading, setLog])
+    }, [_identity, _users, addFeedback, setLoading, setLog, refreshUsers])
 
     return (
         <>

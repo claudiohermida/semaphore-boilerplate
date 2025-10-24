@@ -33,45 +33,75 @@ export default function GroupsPage() {
         setLoading.on()
         setLog(`Joining the Feedback group...`)
 
+        // DEBUG: Check which path will be taken
+        console.log("=== JOIN GROUP DEBUG ===")
+        console.log("OZ Relayer endpoint:", process.env.NEXT_PUBLIC_OZ_RELAYER_ENDPOINT)
+        console.log("OZ Relayer chainId:", process.env.NEXT_PUBLIC_OZ_RELAYER_CHAIN_ID)
+        console.log("Using API proxy: /api/oz-relay")
+        console.log("========================")
+
         let joinedGroup: boolean = false
 
-        if (process.env.NEXT_PUBLIC_OPENZEPPELIN_AUTOTASK_WEBHOOK) {
-            const response = await fetch(process.env.NEXT_PUBLIC_OPENZEPPELIN_AUTOTASK_WEBHOOK, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    abi: Feedback.abi,
-                    address: process.env.NEXT_PUBLIC_FEEDBACK_CONTRACT_ADDRESS as string,
-                    functionName: "joinGroup",
-                    functionParameters: [_identity.commitment.toString()]
-                })
-            })
-
-            if (response.status === 200) {
-                joinedGroup = true
-            }
-        } else if (
-            process.env.NEXT_PUBLIC_GELATO_RELAYER_ENDPOINT &&
-            process.env.NEXT_PUBLIC_GELATO_RELAYER_CHAIN_ID &&
-            process.env.GELATO_RELAYER_API_KEY
+        if (
+            process.env.NEXT_PUBLIC_OZ_RELAYER_ENDPOINT &&
+            process.env.NEXT_PUBLIC_OZ_RELAYER_CHAIN_ID
         ) {
+            console.log("→ Using OpenZeppelin Relayer (via API proxy)")
             const iface = new ethers.Interface(Feedback.abi)
             const request = {
-                chainId: process.env.NEXT_PUBLIC_GELATO_RELAYER_CHAIN_ID,
-                target: process.env.NEXT_PUBLIC_FEEDBACK_CONTRACT_ADDRESS,
+                to: process.env.NEXT_PUBLIC_FEEDBACK_CONTRACT_ADDRESS,
                 data: iface.encodeFunctionData("joinGroup", [_identity.commitment.toString()]),
-                sponsorApiKey: process.env.GELATO_RELAYER_API_KEY
+                value: "0",
+                gasLimit: 500000,
+                speed: "fast"
             }
-            const response = await fetch(process.env.NEXT_PUBLIC_GELATO_RELAYER_ENDPOINT, {
+            console.log("Sending request to OZ Relayer:", request)
+            const response = await fetch("/api/oz-relay", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json"
+                },
                 body: JSON.stringify(request)
             })
 
-            if (response.status === 201) {
+            const responseData = await response.json()
+            console.log("OZ Relayer response status:", response.status)
+            console.log("OZ Relayer response data:", responseData)
+
+            if (response.status === 429) {
+                console.error("❌ Rate limit hit! Error:", responseData)
+                setLog("⏳ Rate limit exceeded. Retrying in 10 seconds...")
+
+                // Auto-retry after 10 seconds
+                await new Promise(resolve => setTimeout(resolve, 10000))
+                setLog("Retrying transaction...")
+
+                // Retry the request
+                const retryResponse = await fetch("/api/oz-relay", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(request)
+                })
+                const retryData = await retryResponse.json()
+                console.log("Retry response:", retryResponse.status, retryData)
+
+                if (retryResponse.status === 200 || retryResponse.ok) {
+                    console.log("✅ OZ Relayer successful on retry!")
+                    joinedGroup = true
+                } else {
+                    setLog(`Retry failed: ${retryData.message || "Please try again later"}`)
+                }
+            } else if (response.status === 200 || response.ok) {
+                console.log("✅ OZ Relayer successful!")
                 joinedGroup = true
+            } else {
+                console.error("❌ OZ Relayer failed:", response.status, responseData)
+                setLog(`Error: ${responseData.message || "Transaction failed"}`)
             }
         } else {
+            console.log("→ Using Backend API (/api/join)")
             const response = await fetch("api/join", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },

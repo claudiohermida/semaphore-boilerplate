@@ -15,8 +15,9 @@ const nextConfig = withPWA({
     env: {
         INFURA_API_KEY: process.env.INFURA_API_KEY,
         ETHEREUM_PRIVATE_KEY: process.env.ETHEREUM_PRIVATE_KEY,
-        GELATO_RELAYER_API_KEY: process.env.GELATO_RELAYER_API_KEY
-    }
+        OZ_RELAYER_API_KEY: process.env.OZ_RELAYER_API_KEY
+    } // ,
+ ///   output: "export"
 })
 
 export default nextConfig
